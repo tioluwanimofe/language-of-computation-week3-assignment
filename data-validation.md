@@ -45,7 +45,7 @@ In this diagnosis a value is **valid as-is** only if it is exactly 10 characters
 | Not an ISBN (other number stored as decimal) | 8 | 958: `76783609419.0` | No |
 | Valid ISBN-13 as text | 0 | – | – |
 
-**Scientific notation (9,407 rows).** The 13-digit number was stored as a floating-point number and written out with only 12 significant digits, e.g. `9780439023483` became `9.78043902348e+12`. Trailing zeros are also cut, e.g. book 11 `9.78159448e+12`. *Probable cause:* the column was read as a number and saved back to text. **The 13th digit (the check digit) is lost** and the 12th may have been rounded up. The value on its own can no longer be validated. It can only be rebuilt from the `isbn` column:
+**Scientific notation (9,407 rows).** The 13-digit number was stored as a floating-point number and written out with only 12 significant digits, e.g. `9780439023481` became `9.78043902348e+12`. Trailing zeros are also cut, e.g. book 11 `9.78159448e+12`. *Probable cause:* the column was read as a number and saved back to text. **The 13th digit (the check digit) is lost** and the 12th may have been rounded up. The value on its own can no longer be validated. It can only be rebuilt from the `isbn` column:
 - 9,238 rows: the rebuilt ISBN-13 from the `isbn` column agrees with the scientific-notation value.
 - 13 rows: they disagree, e.g. book 622 has `isbn` `446612707` but `isbn13` `9.78055381395e+12`. The two columns probably describe different editions, so there is no way to tell which is right.
 - 156 rows: the `isbn` column is empty or bad, so the lost digit can't be rebuilt from it.

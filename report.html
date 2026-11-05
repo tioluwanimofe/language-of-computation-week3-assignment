@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ingestion Report</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --border: #dddcd6;
+    --good: #2f7a3e; --bad: #b3261e; --warn: #9a6400; --accent: #2b5cab;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --panel: #1f1f1d; --text: #ecebe6; --muted: #a09f99; --border: #3a3936;
+            --good: #6cc27d; --bad: #f2827a; --warn: #e4b45c; --accent: #8fb3f0; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  p.lead { color: var(--muted); margin: 0 0 20px; }
+  label.button { display: inline-block; background: var(--accent); color: #fff; padding: 9px 16px;
+                 border-radius: 6px; cursor: pointer; font-weight: 600; }
+  input[type=file] { display: none; }
+  #status { margin-left: 12px; color: var(--muted); }
+  .run { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+         padding: 16px 18px; margin-top: 20px; }
+  .run h2 { font-size: 18px; margin: 0; }
+  .meta { color: var(--muted); font-size: 13px; margin: 2px 0 12px; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 10px;
+           margin-left: 8px; vertical-align: 2px; border: 1px solid currentColor; }
+  .ok { color: var(--good); } .fail { color: var(--bad); }
+  .counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .count { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+  .count b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
+  .count span { color: var(--muted); font-size: 12px; }
+  .count.rejected b { color: var(--bad); } .count.warnings b { color: var(--warn); }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; font-weight: 600; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 8px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  .reason { margin-bottom: 4px; } .action { color: var(--muted); }
+  .error { color: var(--bad); font-weight: 600; }
+  .empty { color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Ingestion Report</h1>
+  <p class="lead">Open <code>ingestion-log.json</code> to see every run of <code>ingest.py</code>, newest first.</p>
+  <label class="button">Open ingestion-log.json<input type="file" id="file" accept=".json,application/json"></label>
+  <span id="status">No log loaded.</span>
+  <div id="runs"></div>
+</main>
+<script>
+const $ = (tag, attrs = {}, ...kids) => {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) k === "class" ? el.className = v : el.setAttribute(k, v);
+  for (const kid of kids) el.append(kid);
+  return el;
+};
+
+function rowsTable(rows, withOutcome) {
+  if (!rows || rows.length === 0) return $("p", { class: "empty" }, "None.");
+  const head = ["Row", "book_id", "Title", "isbn", "isbn13"];
+  if (withOutcome) head.push("Outcome");
+  head.push("Reason and what to do");
+  const thead = $("thead", {}, $("tr", {}, ...head.map(h => $("th", {}, h))));
+  const tbody = $("tbody");
+  for (const r of rows) {
+    const reasons = $("td");
+    for (const x of r.reasons) {
+      reasons.append($("div", { class: "reason" }, x.reason, $("br"), $("span", { class: "action" }, "→ " + x.action)));
+    }
+    const cells = [
+      $("td", {}, String(r.row)), $("td", {}, r.book_id), $("td", {}, r.title),
+      $("td", {}, $("code", {}, JSON.stringify(r.isbn))), $("td", {}, $("code", {}, JSON.stringify(r.isbn13))),
+    ];
+    if (withOutcome) cells.push($("td", {}, r.outcome || ""));
+    cells.push(reasons);
+    tbody.append($("tr", {}, ...cells));
+  }
+  return $("div", { class: "scroll" }, $("table", {}, thead, tbody));
+}
+
+function section(title, rows, withOutcome, open) {
+  const d = $("details", open ? { open: "" } : {}, $("summary", {}, `${title} (${rows ? rows.length : 0})`));
+  d.append(rowsTable(rows, withOutcome));
+  return d;
+}
+
+function render(runs) {
+  const box = document.getElementById("runs");
+  box.replaceChildren();
+  runs.map((run, i) => ({ run, n: i + 1 })).reverse().forEach(({ run, n }) => {
+    const c = run.counts || {};
+    const badge = run.finished
+      ? $("span", { class: "badge ok" }, "finished")
+      : $("span", { class: "badge fail" }, "NOT finished");
+    const card = $("section", { class: "run" },
+      $("h2", {}, `Run ${n}: ${run.file}`, badge),
+      $("div", { class: "meta" }, `${new Date(run.run_at).toLocaleString()} · ${run.file_path || ""}`));
+    if (!run.finished) {
+      card.append($("p", { class: "error" }, (run.error || "Unknown error") + ". " + (run.note || "")));
+    }
+    const counts = $("div", { class: "counts" });
+    for (const [key, label] of [["read", "read"], ["loaded", "loaded"], ["updated", "updated"],
+                                ["skipped", "skipped (already exist)"], ["rejected", "rejected"],
+                                ["warnings", "rows with warnings"]]) {
+      counts.append($("div", { class: "count " + key }, $("b", {}, String(c[key] ?? 0)), $("span", {}, label)));
+    }
+    card.append(counts);
+    card.append(section("Rejected rows (not loaded)", run.rejected, false, true));
+    card.append(section("Rows with warnings", run.warnings, true, (run.warnings || []).length <= 50));
+    card.append(section("Skipped rows (already in the database, not loaded again)", run.skipped, false, false));
+    box.append(card);
+  });
+}
+
+document.getElementById("file").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const status = document.getElementById("status");
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const runs = JSON.parse(reader.result);
+      if (!Array.isArray(runs)) throw new Error("the file is not a list of runs");
+      render(runs);
+      status.textContent = `${file.name}: ${runs.length} run${runs.length === 1 ? "" : "s"}.`;
+    } catch (err) {
+      status.textContent = "Could not read the log: " + err.message;
+    }
+  };
+  reader.readAsText(file);
+});
+</script>
+</body>
+</html>
